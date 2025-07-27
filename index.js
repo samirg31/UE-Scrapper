@@ -1,8 +1,6 @@
 const { Client, GatewayIntentBits } = require('discord.js');
 const puppeteer = require('puppeteer');
 
-const token = process.env.DISCORD_BOT_TOKEN;
-
 async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
   const browser = await puppeteer.launch({
     headless: true,
@@ -41,7 +39,7 @@ async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
   await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
   await page.waitForSelector('input[placeholder="Enter your name"]');
-  await page.type('input[placeholder="Enter your name"]', guestName, { delay: 10 });
+  await page.type('input[placeholder="Enter your name"]', guestName, { delay: 10 }); // faster typing
 
   const apiResponsePromise = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('API response timeout')), 4000);
@@ -70,100 +68,63 @@ async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
     console.warn('⚠️ Failed to capture API response:', e.message);
   }
 
-  if (apiResponseData) {
-    const items = apiResponseData.data.draftOrder.shoppingCart.items || [];
-
-    const parsedItems = items.map(item => {
-      const customizations = [];
-      if (item.customizations) {
-        for (const key in item.customizations) {
-          const custList = item.customizations[key];
-          custList.forEach(cust => {
-            customizations.push({
-              title: cust.title,
-              price: cust.price / 100,
-              quantity: cust.quantity,
-            });
-          });
-        }
-      }
-
-      return {
-        title: item.title,
-        quantity: item.quantity,
-        pricePerItem: item.price / 100,
-        totalPrice: (item.price * item.quantity) / 100,
-        customizations,
-      };
-    });
-
-    console.log('✅ Parsed API Order Items:\n', JSON.stringify(parsedItems, null, 2));
-  } else {
-    console.warn('⚠️ API response was not captured.');
-  }
-
   await browser.close();
 
-  return {
-    apiResponse: apiResponseData,
-  };
+  return apiResponseData;
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
+const token = process.env.DISCORD_TOKEN;
+
 client.once('ready', () => {
-  console.log('Discord bot ready!');
+  console.log(`Logged in as ${client.user.tag}!`);
 });
 
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
-  if (message.content.startsWith('!ubereats ')) {
+  if (message.content.startsWith('!scrape ')) {
     const args = message.content.split(' ');
-    if (args.length < 2) {
-      message.channel.send('❌ Please provide the Uber Eats group order link!');
-      return;
-    }
     const groupLink = args[1];
-    const guestName = args[2] || 'Guest Tester';
+    if (!groupLink) {
+      return message.reply('❌ Please provide the Uber Eats group order link.');
+    }
 
-    message.channel.send(`⏳ Scraping Uber Eats order for **${guestName}**... Please wait.`);
+    await message.reply('⏳ Scraping started, please wait...');
 
     try {
-      const result = await scrapeUberEatsGroup(groupLink, guestName);
+      const apiResponseData = await scrapeUberEatsGroup(groupLink, message.author.username);
 
-      if (!result.apiResponse) {
-        message.channel.send('⚠️ Failed to get order data.');
-        return;
-      }
+      if (apiResponseData && apiResponseData.data && apiResponseData.data.draftOrder) {
+        const items = apiResponseData.data.draftOrder.shoppingCart.items || [];
 
-      const items = result.apiResponse.data.draftOrder.shoppingCart.items || [];
-      if (items.length === 0) {
-        message.channel.send('No items found in the group order.');
-        return;
-      }
-
-      let reply = '**Order Items:**\n';
-      items.forEach((item, i) => {
-        reply += `\n**${i + 1}. ${item.title}**\nQty: ${item.quantity}, Price per item: $${(item.price / 100).toFixed(2)}\n`;
-        if (item.customizations) {
-          for (const key in item.customizations) {
-            const custList = item.customizations[key];
-            custList.forEach(cust => {
-              reply += ` - ${cust.title} x${cust.quantity} (+$${(cust.price / 100).toFixed(2)})\n`;
-            });
-          }
+        if (items.length === 0) {
+          return message.reply('⚠️ No items found in the order.');
         }
-      });
 
-      if (reply.length > 1900) reply = reply.slice(0, 1900) + '\n... (truncated)';
+        let replyText = '🛒 **Order Items:**\n';
+        items.forEach((item) => {
+          replyText += `- ${item.quantity}x ${item.title} ($${(item.price / 100).toFixed(2)} each)\n`;
 
-      message.channel.send(reply);
-    } catch (err) {
-      console.error(err);
-      message.channel.send(`❌ Error scraping the group order: ${err.message}`);
+          if (item.customizations) {
+            for (const key in item.customizations) {
+              item.customizations[key].forEach(cust => {
+                replyText += `    • ${cust.title} x${cust.quantity} ($${(cust.price / 100).toFixed(2)})\n`;
+              });
+            }
+          }
+        });
+
+        message.reply(replyText);
+      } else {
+        message.reply('⚠️ Could not retrieve order data.');
+      }
+    } catch (error) {
+      console.error(error);
+      message.reply(`❌ Error scraping order: ${error.message}`);
     }
   }
 });
