@@ -1,0 +1,23 @@
+# fly.toml app configuration file generated for ue-scrapper-mqroaw on 2025-07-27T18:31:40Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'ue-scrapper-mqroaw'
+primary_region = 'yyz'
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256
