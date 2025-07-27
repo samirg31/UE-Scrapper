@@ -36,7 +36,7 @@ async function scrapeUberEatsGroup(groupUrl, guestName = "Guest Tester") {
   );
 
   console.log("▶️ Loading group order page...");
-  await page.goto(groupUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
+  await page.goto(groupUrl, { waitUntil: "domcontentloaded", timeout: 90000 });
 
   await page.waitForSelector('input[placeholder="Enter your name"]');
   await page.type('input[placeholder="Enter your name"]', guestName, {
