@@ -1,21 +1,21 @@
-const { Client, GatewayIntentBits } = require('discord.js');
-const puppeteer = require('puppeteer');
+const { Client, GatewayIntentBits, Partials } = require("discord.js");
+const puppeteer = require("puppeteer");
 
-async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
+async function scrapeUberEatsGroup(groupUrl, guestName = "Guest Tester") {
   const browser = await puppeteer.launch({
     headless: true,
     args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--disable-gpu',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
-      '--disable-background-networking',
-      '--disable-extensions',
-      '--disable-background-timer-throttling',
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process",
+      "--disable-background-networking",
+      "--disable-extensions",
+      "--disable-background-timer-throttling",
     ],
   });
 
@@ -23,8 +23,8 @@ async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
   page.setDefaultTimeout(10000);
 
   await page.setRequestInterception(true);
-  page.on('request', (request) => {
-    if (['image', 'stylesheet', 'font'].includes(request.resourceType())) {
+  page.on("request", (request) => {
+    if (["image", "stylesheet", "font"].includes(request.resourceType())) {
       request.abort();
     } else {
       request.continue();
@@ -32,20 +32,25 @@ async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
   });
 
   await page.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115 Safari/537.36'
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115 Safari/537.36",
   );
 
-  console.log('▶️ Loading group order page...');
-  await page.goto(groupUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+  console.log("▶️ Loading group order page...");
+  await page.goto(groupUrl, { waitUntil: "domcontentloaded", timeout: 30000 });
 
   await page.waitForSelector('input[placeholder="Enter your name"]');
-  await page.type('input[placeholder="Enter your name"]', guestName, { delay: 10 }); // faster typing
+  await page.type('input[placeholder="Enter your name"]', guestName, {
+    delay: 10,
+  }); // faster typing
 
   const apiResponsePromise = new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('API response timeout')), 4000);
-    page.on('response', async (response) => {
+    const timeout = setTimeout(
+      () => reject(new Error("API response timeout")),
+      4000,
+    );
+    page.on("response", async (response) => {
       try {
-        if (response.url().includes('getDraftOrderByUuidV2')) {
+        if (response.url().includes("getDraftOrderByUuidV2")) {
           clearTimeout(timeout);
           const data = await response.json();
           resolve(data);
@@ -54,10 +59,12 @@ async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
     });
   });
 
-  const [joinBtn] = await page.$x("//button[contains(., 'Join order') and not(@disabled)]");
-  if (!joinBtn) throw new Error('Join order button not found');
+  const [joinBtn] = await page.$x(
+    "//button[contains(., 'Join order') and not(@disabled)]",
+  );
+  if (!joinBtn) throw new Error("Join order button not found");
   await joinBtn.click();
-  console.log('✅ “Join order” clicked');
+  console.log("✅ “Join order” clicked");
 
   await page.waitForTimeout(1000);
 
@@ -65,7 +72,7 @@ async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
   try {
     apiResponseData = await apiResponsePromise;
   } catch (e) {
-    console.warn('⚠️ Failed to capture API response:', e.message);
+    console.warn("⚠️ Failed to capture API response:", e.message);
   }
 
   await browser.close();
@@ -74,44 +81,60 @@ async function scrapeUberEatsGroup(groupUrl, guestName = 'Guest Tester') {
 }
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages, // <-- add this to receive DMs
+  ],
+  partials: [Partials.Channel], // <-- Required to receive DMs because DM channels are partials
 });
 
 const token = process.env.DISCORD_TOKEN;
 
-client.once('ready', () => {
+client.once("ready", () => {
   console.log(`Logged in as ${client.user.tag}!`);
+  client.user.setStatus("online"); // explicitly set online status
+  client.user.setActivity("Scraping Uber Eats");
 });
 
-client.on('messageCreate', async (message) => {
+client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  if (message.content.startsWith('!scrape ')) {
-    const args = message.content.split(' ');
+  if (message.content.startsWith("!scrape ")) {
+    console.log("Received command from scrape");
+    const args = message.content.split(" ");
     const groupLink = args[1];
     if (!groupLink) {
-      return message.reply('❌ Please provide the Uber Eats group order link.');
+      return message.reply("❌ Please provide the Uber Eats group order link.");
     }
 
-    await message.reply('⏳ Scraping started, please wait...');
+    await message.reply("⏳ Scraping started, please wait...");
 
     try {
-      const apiResponseData = await scrapeUberEatsGroup(groupLink, message.author.username);
+      const apiResponseData = await scrapeUberEatsGroup(
+        groupLink,
+        message.author.username,
+      );
 
-      if (apiResponseData && apiResponseData.data && apiResponseData.data.draftOrder) {
+      if (
+        apiResponseData &&
+        apiResponseData.data &&
+        apiResponseData.data.draftOrder
+      ) {
         const items = apiResponseData.data.draftOrder.shoppingCart.items || [];
 
         if (items.length === 0) {
-          return message.reply('⚠️ No items found in the order.');
+          return message.reply("⚠️ No items found in the order.");
         }
 
-        let replyText = '🛒 **Order Items:**\n';
+        let replyText = "🛒 **Order Items:**\n";
         items.forEach((item) => {
           replyText += `- ${item.quantity}x ${item.title} ($${(item.price / 100).toFixed(2)} each)\n`;
 
           if (item.customizations) {
             for (const key in item.customizations) {
-              item.customizations[key].forEach(cust => {
+              item.customizations[key].forEach((cust) => {
                 replyText += `    • ${cust.title} x${cust.quantity} ($${(cust.price / 100).toFixed(2)})\n`;
               });
             }
@@ -120,7 +143,7 @@ client.on('messageCreate', async (message) => {
 
         message.reply(replyText);
       } else {
-        message.reply('⚠️ Could not retrieve order data.');
+        message.reply("⚠️ Could not retrieve order data.");
       }
     } catch (error) {
       console.error(error);
